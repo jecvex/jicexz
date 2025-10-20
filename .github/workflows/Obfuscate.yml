@@ -1,11 +1,12 @@
-name: Build Obfuscate BPB Panel
+name: Build and Obfuscate BPB Panel
 
 on:
   push:
     branches:
       - main
   schedule:
-    - cron: "0 1 * * *"  # 每天 01:00 运行
+    # 每天凌晨1:00运行
+    - cron: "0 1 * * *"
 
 permissions:
   contents: write
@@ -13,75 +14,42 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Check out the code
+      - name: 检出代码
         uses: actions/checkout@v4
 
-      - name: Set up Node.js
+      - name: 设置 Node.js 环境
         uses: actions/setup-node@v4
         with:
           node-version: "latest"
 
-      - name: Install dependencies
-        run: npm install -g javascript-obfuscator
-
-      - name: Try to obtain BPB source (git clone primary, raw + jsDelivr fallback)
+      - name: 安装依赖项
         run: |
-          set -e
-          TARGET="origin.js"
-          # 首选：直接 git clone（更可靠，避免 raw URL 路径细微变动导致 404）
-          echo "Attempting to git clone the BPB repo..."
-          if git clone --depth 1 https://github.com/bia-pain-bache/BPB-Worker-Panel.git tmp-bpb 2>/dev/null; then
-            if [ -f "tmp-bpb/build/unobfuscated-worker.js" ]; then
-              cp tmp-bpb/build/unobfuscated-worker.js "${TARGET}"
-              echo "Obtained file from git clone."
-            else
-              echo "git clone succeeded but expected file path not found. Removing tmp and trying fallbacks..."
-              rm -rf tmp-bpb
-              false
-            fi
-          else
-            echo "git clone failed. Trying raw.githubusercontent fallback..."
-            false
-          fi || {
-            # 回退 1： raw.githubusercontent.com（注意格式 owner/repo/branch/path）
-            RAW_URL="https://raw.githubusercontent.com/bia-pain-bache/BPB-Worker-Panel/main/build/unobfuscated-worker.js"
-            echo "Trying RAW URL: ${RAW_URL}"
-            if curl -fsSL "${RAW_URL}" -o "${TARGET}"; then
-              echo "Obtained file from raw.githubusercontent.com"
-            else
-              echo "RAW fallback failed. Trying jsDelivr CDN..."
-              # 回退 2： jsDelivr CDN
-              CDN_URL="https://cdn.jsdelivr.net/gh/bia-pain-bache/BPB-Worker-Panel@main/build/unobfuscated-worker.js"
-              if curl -fsSL "${CDN_URL}" -o "${TARGET}"; then
-                echo "Obtained file from jsDelivr"
-              else
-                echo "All attempts failed. Please check the source repository/path and update the workflow URL or include the worker source directly in this repo."
-                exit 1
-              fi
-            fi
-          }
+          npm install -g javascript-obfuscator
 
-      - name: Obfuscate BPB worker js
+      - name: 下载 BPB worker.js
+        run: |
+          wget -O origin.js https://github.com/bia-pain-bache/BPB-Worker-Panel/releases/download/v3.6.1/worker.js
+
+      - name: 混淆 BPB worker.js
         run: |
           javascript-obfuscator origin.js --output _worker.js \
             --compact true \
-            --control-flow-flattening true \
-            --control-flow-flattening-threshold 1 \
-            --dead-code-injection true \
-            --dead-code-injection-threshold 1 \
-            --identifier-names-generator hexadecimal \
-            --rename-globals true \
+            --control-flow-flattening false \
+            --dead-code-injection false \
+            --identifier-names-generator mangled \
+            --rename-globals false \
             --string-array true \
             --string-array-encoding 'rc4' \
-            --string-array-threshold 1 \
+            --string-array-threshold 0.75 \
             --transform-object-keys true \
             --unicode-escape-sequence true
 
-      - name: Commit changes
+      - name: 提交更改
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
           branch: main
-          commit_message: ':arrow_up: update latest bpb panel'
+          commit_message: ':arrow_up: 更新最新的 BPB 面板'
           commit_author: 'github-actions[bot] <github-actions[bot]@users.noreply.github.com>'
           push_options: '--set-upstream'
